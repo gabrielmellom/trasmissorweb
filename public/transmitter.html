@@ -1,127 +1,103 @@
 <!DOCTYPE html>
-<html lang="pt-BR">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Transmissor de Áudio</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <script src="/socket.io/socket.io.js"></script>
-    <style>
-        body { text-align: center; font-family: Arial, sans-serif; padding: 20px; }
-        button { margin: 10px; padding: 10px; font-size: 16px; }
-        #debug { margin-top: 20px; padding: 10px; background: #f0f0f0; text-align: left; max-height: 200px; overflow-y: auto; }
-    </style>
 </head>
 <body>
-    <h1>Transmissor de Áudio</h1>
-    <button id="startButton">Iniciar Transmissão</button>
-    <button id="stopButton" style="display: none;">Parar Transmissão</button>
-    <p id="status" style="margin-top: 10px; color: red;">Desconectado</p>
-    <div id="debug"></div>
+    <div style="text-align: center; padding: 20px;">
+        <h2>Transmissor 1</h2>
+        <button id="startButton">Iniciar Transmissão</button>
+        <button id="stopButton" disabled>Parar Transmissão</button>
+        <div id="status" style="margin-top: 20px;">Desconectado</div>
+        <div id="volumeMeter" style="margin-top: 10px; height: 20px; background: #eee;">
+            <div id="volumeBar" style="height: 100%; width: 0%; background: #4CAF50;"></div>
+        </div>
+    </div>
 
     <script>
+        // Conecta ao servidor - substitua com seu URL do Render
         const socket = io();
-        let mediaRecorder, audioStream;
+        let mediaRecorder;
+        let audioContext;
+        let analyser;
+        let dataArray;
+        let isTransmitting = false;
 
         const startButton = document.getElementById('startButton');
         const stopButton = document.getElementById('stopButton');
         const status = document.getElementById('status');
-        const debug = document.getElementById('debug');
-
-        function log(message) {
-            const time = new Date().toLocaleTimeString();
-            debug.innerHTML = `[${time}] ${message}<br>` + debug.innerHTML;
-            console.log(`[${time}] ${message}`);
-        }
-
-        function getSupportedMimeType() {
-            const types = ['audio/wav', 'audio/webm;codecs=opus', 'audio/ogg;codecs=opus'];
-            for (const type of types) {
-                if (MediaRecorder.isTypeSupported(type)) {
-                    log(`✅ Formato suportado: ${type}`);
-                    return type;
-                }
-            }
-            log('❌ Nenhum formato de áudio suportado.');
-            return null;
-        }
+        const volumeBar = document.getElementById('volumeBar');
 
         socket.on('connect', () => {
-            log('🟢 Conectado ao servidor');
-            status.innerText = 'Conectado';
-            status.style.color = 'green';
+            status.textContent = 'Conectado';
             startButton.disabled = false;
-            socket.emit('register-role', 'transmitter');
         });
 
         socket.on('disconnect', () => {
-            log('🔴 Desconectado do servidor');
-            status.innerText = 'Desconectado';
-            status.style.color = 'red';
+            status.textContent = 'Desconectado';
             stopTransmission();
         });
 
         startButton.onclick = async () => {
             try {
-                log('🎤 Solicitando acesso ao microfone...');
-                audioStream = await navigator.mediaDevices.getUserMedia({
-                    audio: {
-                        channelCount: 1,
-                        sampleRate: 44100,
-                        echoCancellation: true,
-                        noiseSuppression: true,
-                        autoGainControl: true
-                    }
-                });
-
-                const mimeType = getSupportedMimeType();
-                if (!mimeType) throw new Error('Nenhum formato de áudio suportado');
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
                 
-                log('🎙️ Configurando MediaRecorder...');
-                mediaRecorder = new MediaRecorder(audioStream, { mimeType: mimeType, audioBitsPerSecond: 128000 });
-
+                // Configurar análise de áudio
+                audioContext = new AudioContext();
+                const source = audioContext.createMediaStreamSource(stream);
+                analyser = audioContext.createAnalyser();
+                source.connect(analyser);
+                
+                analyser.fftSize = 256;
+                dataArray = new Uint8Array(analyser.frequencyBinCount);
+                
+                mediaRecorder = new MediaRecorder(stream);
+                
                 mediaRecorder.ondataavailable = (event) => {
-                    if (event.data.size > 0) {
-                        log(`📤 Enviando chunk: ${event.data.size} bytes`);
+                    if (event.data.size > 0 && isTransmitting) {
                         socket.emit('audio-stream', event.data);
-                    } else {
-                        log('⚠️ Chunk vazio, ignorado');
                     }
                 };
 
-                mediaRecorder.onstart = () => {
-                    log('▶️ Transmissão iniciada');
-                    status.innerText = 'Transmitindo...';
-                    status.style.color = 'blue';
-                    startButton.style.display = 'none';
-                    stopButton.style.display = 'inline';
-                };
-
-                mediaRecorder.onstop = () => log('⏹️ Transmissão encerrada');
+                mediaRecorder.start(100);
+                isTransmitting = true;
                 
-                log('▶️ Iniciando gravação...');
-                mediaRecorder.start(50);
+                startButton.disabled = true;
+                stopButton.disabled = false;
+                status.textContent = 'Transmitindo';
+                
+                // Atualizar medidor de volume
+                updateVolumeMeter();
+                
             } catch (error) {
-                log(`❌ Erro: ${error.message}`);
-                status.innerText = `Erro: ${error.message}`;
-                status.style.color = 'red';
+                console.error('Erro:', error);
+                status.textContent = 'Erro ao acessar microfone';
             }
         };
+
+        function updateVolumeMeter() {
+            if (!isTransmitting) return;
+            
+            analyser.getByteFrequencyData(dataArray);
+            let volume = dataArray.reduce((a, b) => a + b) / dataArray.length;
+            volumeBar.style.width = (volume * 100 / 256) + '%';
+            
+            requestAnimationFrame(updateVolumeMeter);
+        }
 
         stopButton.onclick = stopTransmission;
 
         function stopTransmission() {
             if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-                log('⏹️ Parando gravação...');
                 mediaRecorder.stop();
             }
-            if (audioStream) {
-                log('🎤 Liberando microfone...');
-                audioStream.getTracks().forEach(track => track.stop());
-            }
-            status.innerText = 'Transmissão parada';
-            startButton.style.display = 'inline';
-            stopButton.style.display = 'none';
+            isTransmitting = false;
             startButton.disabled = false;
+            stopButton.disabled = true;
+            status.textContent = 'Conectado';
+            volumeBar.style.width = '0%';
         }
     </script>
 </body>

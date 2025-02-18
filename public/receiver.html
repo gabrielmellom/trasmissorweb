@@ -7,84 +7,82 @@
 </head>
 <body>
     <div style="text-align: center; padding: 20px;">
-        <h1>Receptor de Áudio</h1>
-        <button id="startButton">Iniciar Recepção</button>
-        <button id="stopButton" style="display: none;">Parar Recepção</button>
-        <div id="status" style="margin-top: 20px;"></div>
-        <div id="debug" style="margin: 20px; text-align: left; padding: 10px; background: #f0f0f0;"></div>
+        <h2>Receptor</h2>
+        <div id="status" style="margin: 20px;">Desconectado</div>
+        <div id="volumeMeter" style="margin: 10px auto; height: 20px; background: #eee; width: 200px;">
+            <div id="volumeBar" style="height: 100%; width: 0%; background: #4CAF50;"></div>
+        </div>
+        <div id="audioControls">
+            <label for="volume">Volume: </label>
+            <input type="range" id="volume" min="0" max="1" step="0.1" value="1">
+        </div>
     </div>
 
     <script>
+        // Conecta ao servidor - substituia com seu URL do Render
         const socket = io();
-        let audioContext;
-        let isPlaying = false;
-
-        const startButton = document.getElementById('startButton');
-        const stopButton = document.getElementById('stopButton');
         const status = document.getElementById('status');
-        const debug = document.getElementById('debug');
-
-        function log(message) {
-            const time = new Date().toLocaleTimeString();
-            debug.innerHTML = `[${time}] ${message}<br>` + debug.innerHTML;
-            console.log(`[${time}] ${message}`);
-        }
-
+        const volumeBar = document.getElementById('volumeBar');
+        const volumeControl = document.getElementById('volume');
+        
+        let audioContext;
+        let audioElement;
+        let gainNode;
+        
         socket.on('connect', () => {
-            log('🟢 Conectado ao servidor');
-            status.innerHTML = 'Conectado ao servidor';
-            status.style.color = 'green';
-            socket.emit('register-role', 'receiver');
+            status.textContent = 'Conectado - Aguardando transmissão';
+            setupAudio();
         });
 
         socket.on('disconnect', () => {
-            log('🔴 Desconectado do servidor');
-            status.innerHTML = 'Desconectado do servidor';
-            status.style.color = 'red';
-            stopReception();
+            status.textContent = 'Desconectado';
         });
 
-        socket.on('audio-stream', async (data) => {
-            if (!isPlaying || !audioContext) return;
+        function setupAudio() {
+            audioContext = new AudioContext();
+            audioElement = new Audio();
+            gainNode = audioContext.createGain();
             
-            try {
-                const audioBuffer = await audioContext.decodeAudioData(data);
-                playAudio(audioBuffer);
-            } catch (error) {
-                log('❌ Erro ao processar áudio: ' + error.message);
-            }
-        });
-
-        function playAudio(audioBuffer) {
-            if (!audioContext) return;
-            const bufferSource = audioContext.createBufferSource();
-            bufferSource.buffer = audioBuffer;
-            bufferSource.connect(audioContext.destination);
-            bufferSource.start();
+            const source = audioContext.createMediaElementSource(audioElement);
+            source.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+            
+            volumeControl.addEventListener('input', (e) => {
+                gainNode.gain.value = e.target.value;
+            });
         }
 
-        startButton.onclick = () => {
-            log('🎧 Iniciando recepção de áudio...');
-            audioContext = new (window.AudioContext || window.webkitAudioContext)();
-            isPlaying = true;
-            startButton.style.display = 'none';
-            stopButton.style.display = 'inline';
-            status.innerHTML = 'Recebendo áudio...';
-            status.style.color = 'green';
-        };
+        socket.on('audio-stream', (audioData) => {
+            const blob = new Blob([audioData], { type: 'audio/ogg; codecs=opus' });
+            audioElement.src = URL.createObjectURL(blob);
+            audioElement.play()
+                .then(() => {
+                    status.textContent = 'Recebendo áudio';
+                    updateVolumeMeter();
+                })
+                .catch(error => {
+                    console.error('Erro ao reproduzir:', error);
+                    status.textContent = 'Erro na reprodução';
+                });
+        });
 
-        stopButton.onclick = stopReception;
-
-        function stopReception() {
-            log('⏹️ Parando recepção de áudio...');
-            if (audioContext) {
-                audioContext.close();
-                audioContext = null;
+        function updateVolumeMeter() {
+            if (!audioContext) return;
+            
+            const analyser = audioContext.createAnalyser();
+            gainNode.connect(analyser);
+            analyser.fftSize = 256;
+            
+            const dataArray = new Uint8Array(analyser.frequencyBinCount);
+            
+            function update() {
+                analyser.getByteFrequencyData(dataArray);
+                const volume = dataArray.reduce((a, b) => a + b) / dataArray.length;
+                volumeBar.style.width = (volume * 100 / 256) + '%';
+                requestAnimationFrame(update);
             }
-            isPlaying = false;
-            status.innerHTML = 'Recepção parada';
-            startButton.style.display = 'inline';
-            stopButton.style.display = 'none';
+            
+            update();
         }
     </script>
 </body>
