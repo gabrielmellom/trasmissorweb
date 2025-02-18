@@ -1,24 +1,19 @@
-// sender.js
+const record = require('node-record-lpcm16');
 const WebSocket = require('ws');
-const mic = require('mic');
 
-const ws = new WebSocket('ws://seu-servidor-render.onrender.com:8080'); // Substitua pelo URL do seu servidor no Render
+const ws = new WebSocket('ws://seu-servidor-render.onrender.com:8080'); // Substitua pelo URL do seu servidor
 
-const micInstance = mic({
-    rate: '44100',
-    channels: '2',
-    debug: true,
-    exitOnSilence: 6,
+// Inicia a captura de áudio
+const audioStream = record.record({
+  sampleRate: 44100,
+  verbose: false,
 });
 
-const micInputStream = micInstance.getAudioStream();
-
-micInputStream.on('data', (data) => {
-    if (ws.readyState === WebSocket.OPEN) {
-        ws.send(data); // Envia o áudio para o servidor
-    }
+// Envia o áudio para o servidor
+audioStream.stream().on('data', (chunk) => {
+  if (ws.readyState === WebSocket.OPEN) {
+    ws.send(chunk);
+  }
 });
-
-micInstance.start();
 
 console.log('Enviando áudio ao vivo...');

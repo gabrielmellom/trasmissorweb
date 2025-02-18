@@ -9,7 +9,10 @@
   },
   "dependencies": {
     "express": "^4.17.1",
-    "socket.io": "^4.5.1"
+    "node-record-lpcm16": "^1.0.1",
+    "socket.io": "^4.5.1",
+    "sound-play": "^1.1.0",
+    "ws": "^8.18.0"
   },
   "devDependencies": {
     "nodemon": "^2.0.15"
