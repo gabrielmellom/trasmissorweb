@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Receptor de Áudio</title>
+    <title>Receptor de Áudio - Debug</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <script src="/socket.io/socket.io.js"></script>
 </head>
@@ -9,6 +9,7 @@
     <div style="text-align: center; padding: 20px;">
         <h1>Receptor</h1>
         <div id="status" style="margin: 20px;"></div>
+        <div id="debug" style="margin: 20px; text-align: left; padding: 10px; background: #f0f0f0;"></div>
         <div>
             <label for="volume">Volume: </label>
             <input type="range" id="volume" min="0" max="1" step="0.1" value="1">
@@ -18,64 +19,89 @@
     <script>
         const socket = io();
         const status = document.getElementById('status');
+        const debug = document.getElementById('debug');
         const volumeControl = document.getElementById('volume');
         
         let audioContext;
-        let audioQueue = [];
         let isPlaying = false;
 
+        function log(message) {
+            const time = new Date().toLocaleTimeString();
+            debug.innerHTML = `[${time}] ${message}<br>` + debug.innerHTML;
+            console.log(`[${time}] ${message}`);
+        }
+
         socket.on('connect', () => {
+            log('🟢 Conectado ao servidor');
             status.innerHTML = 'Conectado - Aguardando áudio';
             status.style.color = 'green';
             setupAudio();
+            socket.emit('register-role', 'receiver');
         });
 
         socket.on('disconnect', () => {
+            log('🔴 Desconectado do servidor');
             status.innerHTML = 'Desconectado do servidor';
             status.style.color = 'red';
         });
 
         function setupAudio() {
-            audioContext = new AudioContext();
-            
-            // Configurar controle de volume
-            const gainNode = audioContext.createGain();
-            gainNode.connect(audioContext.destination);
-            
-            volumeControl.onchange = function() {
-                gainNode.gain.value = this.value;
-            };
+            try {
+                log('🎵 Inicializando contexto de áudio...');
+                audioContext = new AudioContext();
+                log(`   Sample rate: ${audioContext.sampleRate}Hz`);
+                log(`   Estado: ${audioContext.state}`);
+                
+                // Configurar controle de volume
+                const gainNode = audioContext.createGain();
+                gainNode.connect(audioContext.destination);
+                log('✅ Contexto de áudio inicializado com sucesso');
+            } catch (error) {
+                log('❌ Erro ao inicializar áudio: ' + error.message);
+            }
         }
 
         socket.on('audio-stream', async (audioData) => {
-            console.log('Recebido áudio:', audioData.size, 'bytes');
+            log(`📨 Recebendo chunk de áudio: ${audioData.size} bytes`);
             status.innerHTML = 'Recebendo áudio...';
             
             try {
+                log('   Criando Blob...');
                 const blob = new Blob([audioData], { type: 'audio/webm;codecs=opus' });
+                
+                log('   Convertendo para ArrayBuffer...');
                 const arrayBuffer = await blob.arrayBuffer();
+                
+                log('   Decodificando áudio...');
                 const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
                 
+                log(`   ✅ Áudio decodificado: ${audioBuffer.duration.toFixed(2)}s`);
                 playAudio(audioBuffer);
             } catch (error) {
-                console.error('Erro ao processar áudio:', error);
+                log('❌ Erro ao processar áudio: ' + error.message);
                 status.innerHTML = 'Erro ao processar áudio';
                 status.style.color = 'red';
             }
         });
 
         function playAudio(audioBuffer) {
-            const source = audioContext.createBufferSource();
-            source.buffer = audioBuffer;
-            
-            const gainNode = audioContext.createGain();
-            gainNode.gain.value = volumeControl.value;
-            
-            source.connect(gainNode);
-            gainNode.connect(audioContext.destination);
-            
-            source.start(0);
-            status.innerHTML = 'Reproduzindo áudio';
+            try {
+                log('🔊 Iniciando reprodução...');
+                const source = audioContext.createBufferSource();
+                source.buffer = audioBuffer;
+                
+                const gainNode = audioContext.createGain();
+                gainNode.gain.value = volumeControl.value;
+                
+                source.connect(gainNode);
+                gainNode.connect(audioContext.destination);
+                
+                source.start(0);
+                log('✅ Reprodução iniciada com sucesso');
+                status.innerHTML = 'Reproduzindo áudio';
+            } catch (error) {
+                log('❌ Erro ao reproduzir áudio: ' + error.message);
+            }
         }
     </script>
 </body>
