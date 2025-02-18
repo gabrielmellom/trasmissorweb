@@ -15,43 +15,29 @@ const connectedClients = new Map();
 
 io.on('connection', (socket) => {
   console.log('🟢 Nova conexão:', socket.id);
-  connectedClients.set(socket.id, {
-    role: 'unknown',
-    lastActivity: Date.now()
-  });
-
-  console.log('📊 Total de clientes conectados:', connectedClients.size);
+  connectedClients.set(socket.id, { role: 'unknown' });
 
   socket.on('register-role', (role) => {
     console.log(`🔷 Cliente ${socket.id} registrado como: ${role}`);
     connectedClients.get(socket.id).role = role;
   });
 
-  socket.on('audio-stream', async (data) => {
-    const client = connectedClients.get(socket.id);
-    console.log(`📨 Recebendo áudio de ${socket.id} (${client?.role || 'unknown'})`);
-    
-    if (!(data instanceof Blob)) {
-      console.warn(`⚠️ Dados recebidos não são Blob. Tipo: ${typeof data}`);
+  socket.on('audio-stream', (data) => {
+    console.log(`📨 Recebendo áudio de ${socket.id}`);
+
+    if (!(data instanceof ArrayBuffer)) {
+      console.warn(`⚠️ Dados recebidos não são ArrayBuffer. Tipo: ${typeof data}`);
       return;
     }
 
-    try {
-      const buffer = await data.arrayBuffer();
-      console.log(`   🔄 Convertendo Blob para ArrayBuffer (${buffer.byteLength} bytes)`);
-      
-      // Enviar para os receptores
-      socket.broadcast.emit('audio-stream', buffer);
-      console.log('   ✈️ Áudio transmitido para os receptores');
-    } catch (error) {
-      console.error('❌ Erro ao converter áudio:', error);
-    }
+    // Enviar para os receptores
+    socket.broadcast.emit('audio-stream', data);
+    console.log('   ✈️ Áudio transmitido para os receptores');
   });
 
   socket.on('disconnect', () => {
     console.log('🔴 Cliente desconectado:', socket.id);
     connectedClients.delete(socket.id);
-    console.log('📊 Total de clientes restantes:', connectedClients.size);
   });
 });
 

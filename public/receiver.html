@@ -17,10 +17,6 @@
     <script>
         const socket = io();
         let audioContext;
-        let sourceNode;
-        let mediaSource;
-        let sourceBuffer;
-        let queue = [];
         let isPlaying = false;
 
         const startButton = document.getElementById('startButton');
@@ -49,19 +45,15 @@
         });
 
         socket.on('audio-stream', async (data) => {
-            if (!isPlaying) return;
+            if (!isPlaying || !audioContext) return;
+            
             try {
-                const audioBuffer = await decodeAudioData(data);
+                const audioBuffer = await audioContext.decodeAudioData(data);
                 playAudio(audioBuffer);
             } catch (error) {
                 log('❌ Erro ao processar áudio: ' + error.message);
             }
         });
-
-        async function decodeAudioData(data) {
-            if (!audioContext) return;
-            return await audioContext.decodeAudioData(data.arrayBuffer());
-        }
 
         function playAudio(audioBuffer) {
             if (!audioContext) return;
