@@ -1,61 +1,82 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Receptor de Áudio</title>
+    <title>Receptor de Áudio</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <script src="/socket.io/socket.io.js"></script>
 </head>
 <body>
-  <h1>Receptor</h1>
-  <audio id="audioPlayer" autoplay controls></audio>
-  <div id="status"></div>
+    <div style="text-align: center; padding: 20px;">
+        <h1>Receptor</h1>
+        <div id="status" style="margin: 20px;"></div>
+        <div>
+            <label for="volume">Volume: </label>
+            <input type="range" id="volume" min="0" max="1" step="0.1" value="1">
+        </div>
+    </div>
 
-  <script src="/socket.io/socket.io.js"></script>
-  <script>
-    const socket = io();
-    const roomId = 'transmission-room';
-    let peerConnection;
-
-    socket.emit('join-room', roomId);
-
-    const configuration = {
-      iceServers: [
-        { urls: 'stun:stun.l.google.com:19302' }
-      ]
-    };
-
-    socket.on('offer', async (offer) => {
-      try {
-        peerConnection = new RTCPeerConnection(configuration);
-
-        peerConnection.ontrack = (event) => {
-          const audioPlayer = document.getElementById('audioPlayer');
-          audioPlayer.srcObject = event.streams[0];
-        };
-
-        peerConnection.onicecandidate = (event) => {
-          if (event.candidate) {
-            socket.emit('ice-candidate', event.candidate, roomId);
-          }
-        };
-
-        await peerConnection.setRemoteDescription(offer);
-        const answer = await peerConnection.createAnswer();
-        await peerConnection.setLocalDescription(answer);
-        socket.emit('answer', answer, roomId);
+    <script>
+        const socket = io();
+        const status = document.getElementById('status');
+        const volumeControl = document.getElementById('volume');
         
-        document.getElementById('status').textContent = 'Conectado ao transmissor';
-      } catch (error) {
-        console.error('Erro ao processar oferta:', error);
-        document.getElementById('status').textContent = 'Erro na conexão';
-      }
-    });
+        let audioContext;
+        let audioQueue = [];
+        let isPlaying = false;
 
-    socket.on('ice-candidate', async (candidate) => {
-      try {
-        await peerConnection.addIceCandidate(candidate);
-      } catch (error) {
-        console.error('Erro ao adicionar candidato ICE:', error);
-      }
-    });
-  </script>
+        socket.on('connect', () => {
+            status.innerHTML = 'Conectado - Aguardando áudio';
+            status.style.color = 'green';
+            setupAudio();
+        });
+
+        socket.on('disconnect', () => {
+            status.innerHTML = 'Desconectado do servidor';
+            status.style.color = 'red';
+        });
+
+        function setupAudio() {
+            audioContext = new AudioContext();
+            
+            // Configurar controle de volume
+            const gainNode = audioContext.createGain();
+            gainNode.connect(audioContext.destination);
+            
+            volumeControl.onchange = function() {
+                gainNode.gain.value = this.value;
+            };
+        }
+
+        socket.on('audio-stream', async (audioData) => {
+            console.log('Recebido áudio:', audioData.size, 'bytes');
+            status.innerHTML = 'Recebendo áudio...';
+            
+            try {
+                const blob = new Blob([audioData], { type: 'audio/webm;codecs=opus' });
+                const arrayBuffer = await blob.arrayBuffer();
+                const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+                
+                playAudio(audioBuffer);
+            } catch (error) {
+                console.error('Erro ao processar áudio:', error);
+                status.innerHTML = 'Erro ao processar áudio';
+                status.style.color = 'red';
+            }
+        });
+
+        function playAudio(audioBuffer) {
+            const source = audioContext.createBufferSource();
+            source.buffer = audioBuffer;
+            
+            const gainNode = audioContext.createGain();
+            gainNode.gain.value = volumeControl.value;
+            
+            source.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+            
+            source.start(0);
+            status.innerHTML = 'Reproduzindo áudio';
+        }
+    </script>
 </body>
 </html>

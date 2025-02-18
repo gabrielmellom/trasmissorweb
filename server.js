@@ -11,14 +11,15 @@ const io = require('socket.io')(http, {
 app.use(express.static('public'));
 
 io.on('connection', (socket) => {
-  console.log('Um usuário conectou');
+  console.log('Novo usuário conectado:', socket.id);
 
   socket.on('audio-stream', (data) => {
-    socket.broadcast.emit('audio-stream', data);
+    console.log('Recebendo áudio de:', socket.id, 'Tamanho:', data.size, 'bytes');
+    io.emit('audio-stream', data);
   });
 
   socket.on('disconnect', () => {
-    console.log('Usuário desconectou');
+    console.log('Usuário desconectou:', socket.id);
   });
 });
 
