@@ -10,7 +10,7 @@ const io = require('socket.io')(http, {
 
 app.use(express.static('public'));
 
-// Armazenar informações sobre clientes conectados
+// Armazena informações sobre clientes conectados
 const connectedClients = new Map();
 
 io.on('connection', (socket) => {
@@ -20,23 +20,32 @@ io.on('connection', (socket) => {
     lastActivity: Date.now()
   });
 
-  // Log do número total de clientes
   console.log('📊 Total de clientes conectados:', connectedClients.size);
 
   socket.on('register-role', (role) => {
-    console.log(`🔷 Cliente ${socket.id} registrou-se como: ${role}`);
+    console.log(`🔷 Cliente ${socket.id} registrado como: ${role}`);
     connectedClients.get(socket.id).role = role;
   });
 
-  socket.on('audio-stream', (data) => {
+  socket.on('audio-stream', async (data) => {
     const client = connectedClients.get(socket.id);
     console.log(`📨 Recebendo áudio de ${socket.id} (${client?.role || 'unknown'})`);
-    console.log(`   Tamanho do chunk: ${data.size} bytes`);
-    console.log(`   Tipo do dado:`, typeof data, data instanceof Blob ? 'Blob' : 'Outro formato');
     
-    // Broadcast para todos os receptores
-    socket.broadcast.emit('audio-stream', data);
-    console.log('   ✈️ Áudio transmitido para outros clientes');
+    if (!(data instanceof Blob)) {
+      console.warn(`⚠️ Dados recebidos não são Blob. Tipo: ${typeof data}`);
+      return;
+    }
+
+    try {
+      const buffer = await data.arrayBuffer();
+      console.log(`   🔄 Convertendo Blob para ArrayBuffer (${buffer.byteLength} bytes)`);
+      
+      // Enviar para os receptores
+      socket.broadcast.emit('audio-stream', buffer);
+      console.log('   ✈️ Áudio transmitido para os receptores');
+    } catch (error) {
+      console.error('❌ Erro ao converter áudio:', error);
+    }
   });
 
   socket.on('disconnect', () => {

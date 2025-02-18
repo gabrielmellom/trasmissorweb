@@ -1,23 +1,26 @@
 <!DOCTYPE html>
-<html>
+<html lang="pt-BR">
 <head>
-    <title>Transmissor de Áudio</title>
+    <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Transmissor de Áudio</title>
     <script src="/socket.io/socket.io.js"></script>
+    <style>
+        body { text-align: center; font-family: Arial, sans-serif; padding: 20px; }
+        button { margin: 10px; padding: 10px; font-size: 16px; }
+        #debug { margin-top: 20px; padding: 10px; background: #f0f0f0; text-align: left; max-height: 200px; overflow-y: auto; }
+    </style>
 </head>
 <body>
-    <div style="text-align: center; padding: 20px;">
-        <h1>Transmissor de Áudio</h1>
-        <button id="startButton">Iniciar Transmissão</button>
-        <button id="stopButton" style="display: none;">Parar Transmissão</button>
-        <div id="status" style="margin-top: 20px;"></div>
-        <div id="debug" style="margin: 20px; text-align: left; padding: 10px; background: #f0f0f0;"></div>
-    </div>
+    <h1>Transmissor de Áudio</h1>
+    <button id="startButton">Iniciar Transmissão</button>
+    <button id="stopButton" style="display: none;">Parar Transmissão</button>
+    <p id="status" style="margin-top: 10px; color: red;">Desconectado</p>
+    <div id="debug"></div>
 
     <script>
         const socket = io();
-        let mediaRecorder;
-        let audioStream;
+        let mediaRecorder, audioStream;
 
         const startButton = document.getElementById('startButton');
         const stopButton = document.getElementById('stopButton');
@@ -30,104 +33,80 @@
             console.log(`[${time}] ${message}`);
         }
 
-        // Verificar formatos suportados
         function getSupportedMimeType() {
-            const types = [
-                'audio/wav', // Priorize WAV para maior compatibilidade
-                'audio/webm;codecs=opus',
-                'audio/ogg;codecs=opus'
-            ];
-            
+            const types = ['audio/wav', 'audio/webm;codecs=opus', 'audio/ogg;codecs=opus'];
             for (const type of types) {
                 if (MediaRecorder.isTypeSupported(type)) {
-                    log(`✅ Formato suportado encontrado: ${type}`);
+                    log(`✅ Formato suportado: ${type}`);
                     return type;
                 }
             }
-            
-            log('❌ Nenhum formato suportado encontrado');
+            log('❌ Nenhum formato de áudio suportado.');
             return null;
         }
 
-        // Conectar ao servidor
         socket.on('connect', () => {
             log('🟢 Conectado ao servidor');
-            status.innerHTML = 'Conectado ao servidor';
+            status.innerText = 'Conectado';
             status.style.color = 'green';
             startButton.disabled = false;
             socket.emit('register-role', 'transmitter');
         });
 
-        // Desconectar do servidor
         socket.on('disconnect', () => {
             log('🔴 Desconectado do servidor');
-            status.innerHTML = 'Desconectado do servidor';
+            status.innerText = 'Desconectado';
             status.style.color = 'red';
             stopTransmission();
         });
 
-        // Iniciar transmissão
         startButton.onclick = async () => {
             try {
                 log('🎤 Solicitando acesso ao microfone...');
-                audioStream = await navigator.mediaDevices.getUserMedia({ 
+                audioStream = await navigator.mediaDevices.getUserMedia({
                     audio: {
-                        channelCount: 1, // Mono para reduzir o tamanho dos dados
-                        sampleRate: 44100, // Taxa de amostragem padrão
+                        channelCount: 1,
+                        sampleRate: 44100,
                         echoCancellation: true,
                         noiseSuppression: true,
                         autoGainControl: true
                     }
                 });
-                
-                const mimeType = getSupportedMimeType();
-                if (!mimeType) {
-                    throw new Error('Nenhum formato de áudio suportado');
-                }
 
+                const mimeType = getSupportedMimeType();
+                if (!mimeType) throw new Error('Nenhum formato de áudio suportado');
+                
                 log('🎙️ Configurando MediaRecorder...');
-                const options = {
-                    mimeType: mimeType,
-                    audioBitsPerSecond: 128000 // Bitrate de 128 kbps
-                };
-                
-                mediaRecorder = new MediaRecorder(audioStream, options);
-                log(`   Formato: ${mediaRecorder.mimeType}`);
-                log(`   Bitrate: ${options.audioBitsPerSecond}bps`);
-                
-                // Capturar chunks de áudio
+                mediaRecorder = new MediaRecorder(audioStream, { mimeType: mimeType, audioBitsPerSecond: 128000 });
+
                 mediaRecorder.ondataavailable = (event) => {
                     if (event.data.size > 0) {
-                        log(`📤 Enviando chunk de áudio: ${event.data.size} bytes`);
+                        log(`📤 Enviando chunk: ${event.data.size} bytes`);
                         socket.emit('audio-stream', event.data);
+                    } else {
+                        log('⚠️ Chunk vazio, ignorado');
                     }
                 };
 
-                // Iniciar gravação
                 mediaRecorder.onstart = () => {
-                    log('▶️ Gravação iniciada');
-                    status.innerHTML = 'Transmitindo...';
-                    status.style.color = 'green';
+                    log('▶️ Transmissão iniciada');
+                    status.innerText = 'Transmitindo...';
+                    status.style.color = 'blue';
                     startButton.style.display = 'none';
                     stopButton.style.display = 'inline';
                 };
 
-                // Parar gravação
-                mediaRecorder.onstop = () => {
-                    log('⏹️ Gravação parada');
-                };
-
+                mediaRecorder.onstop = () => log('⏹️ Transmissão encerrada');
+                
                 log('▶️ Iniciando gravação...');
-                mediaRecorder.start(100); // Enviar chunks a cada 100ms
-
+                mediaRecorder.start(50);
             } catch (error) {
-                log('❌ Erro: ' + error.message);
-                status.innerHTML = 'Erro: ' + error.message;
+                log(`❌ Erro: ${error.message}`);
+                status.innerText = `Erro: ${error.message}`;
                 status.style.color = 'red';
             }
         };
 
-        // Parar transmissão
         stopButton.onclick = stopTransmission;
 
         function stopTransmission() {
@@ -139,7 +118,7 @@
                 log('🎤 Liberando microfone...');
                 audioStream.getTracks().forEach(track => track.stop());
             }
-            status.innerHTML = 'Transmissão parada';
+            status.innerText = 'Transmissão parada';
             startButton.style.display = 'inline';
             stopButton.style.display = 'none';
             startButton.disabled = false;
