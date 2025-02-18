@@ -7,7 +7,7 @@
 </head>
 <body>
     <div style="text-align: center; padding: 20px;">
-        <h1>Transmissor</h1>
+        <h1>Transmissor de Áudio</h1>
         <button id="startButton">Iniciar Transmissão</button>
         <button id="stopButton" style="display: none;">Parar Transmissão</button>
         <div id="status" style="margin-top: 20px;"></div>
@@ -33,10 +33,9 @@
         // Verificar formatos suportados
         function getSupportedMimeType() {
             const types = [
-                'audio/webm',
+                'audio/wav', // Priorize WAV para maior compatibilidade
                 'audio/webm;codecs=opus',
-                'audio/ogg;codecs=opus',
-                'audio/mp4;codecs=opus'
+                'audio/ogg;codecs=opus'
             ];
             
             for (const type of types) {
@@ -50,6 +49,7 @@
             return null;
         }
 
+        // Conectar ao servidor
         socket.on('connect', () => {
             log('🟢 Conectado ao servidor');
             status.innerHTML = 'Conectado ao servidor';
@@ -58,6 +58,7 @@
             socket.emit('register-role', 'transmitter');
         });
 
+        // Desconectar do servidor
         socket.on('disconnect', () => {
             log('🔴 Desconectado do servidor');
             status.innerHTML = 'Desconectado do servidor';
@@ -65,13 +66,14 @@
             stopTransmission();
         });
 
+        // Iniciar transmissão
         startButton.onclick = async () => {
             try {
                 log('🎤 Solicitando acesso ao microfone...');
                 audioStream = await navigator.mediaDevices.getUserMedia({ 
                     audio: {
-                        channelCount: 1,
-                        sampleRate: 44100,
+                        channelCount: 1, // Mono para reduzir o tamanho dos dados
+                        sampleRate: 44100, // Taxa de amostragem padrão
                         echoCancellation: true,
                         noiseSuppression: true,
                         autoGainControl: true
@@ -86,13 +88,14 @@
                 log('🎙️ Configurando MediaRecorder...');
                 const options = {
                     mimeType: mimeType,
-                    audioBitsPerSecond: 128000
+                    audioBitsPerSecond: 128000 // Bitrate de 128 kbps
                 };
                 
                 mediaRecorder = new MediaRecorder(audioStream, options);
                 log(`   Formato: ${mediaRecorder.mimeType}`);
                 log(`   Bitrate: ${options.audioBitsPerSecond}bps`);
                 
+                // Capturar chunks de áudio
                 mediaRecorder.ondataavailable = (event) => {
                     if (event.data.size > 0) {
                         log(`📤 Enviando chunk de áudio: ${event.data.size} bytes`);
@@ -100,6 +103,7 @@
                     }
                 };
 
+                // Iniciar gravação
                 mediaRecorder.onstart = () => {
                     log('▶️ Gravação iniciada');
                     status.innerHTML = 'Transmitindo...';
@@ -108,12 +112,13 @@
                     stopButton.style.display = 'inline';
                 };
 
+                // Parar gravação
                 mediaRecorder.onstop = () => {
                     log('⏹️ Gravação parada');
                 };
 
                 log('▶️ Iniciando gravação...');
-                mediaRecorder.start(100); // Chunks a cada 100ms
+                mediaRecorder.start(100); // Enviar chunks a cada 100ms
 
             } catch (error) {
                 log('❌ Erro: ' + error.message);
@@ -122,6 +127,7 @@
             }
         };
 
+        // Parar transmissão
         stopButton.onclick = stopTransmission;
 
         function stopTransmission() {
