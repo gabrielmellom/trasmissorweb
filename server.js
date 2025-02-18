@@ -1,28 +1,22 @@
-const express = require('express');
-const app = express();
-const http = require('http').createServer(app);
-const io = require('socket.io')(http, {
-  cors: {
-    origin: "*",
-    methods: ["GET", "POST"]
-  }
+// server.js
+const WebSocket = require('ws');
+const wss = new WebSocket.Server({ port: 8080 });
+
+wss.on('connection', (ws) => {
+    console.log('Novo cliente conectado');
+
+    ws.on('message', (message) => {
+        // Retransmite o áudio para todos os clientes conectados
+        wss.clients.forEach((client) => {
+            if (client !== ws && client.readyState === WebSocket.OPEN) {
+                client.send(message);
+            }
+        });
+    });
+
+    ws.on('close', () => {
+        console.log('Cliente desconectado');
+    });
 });
 
-app.use(express.static('public'));
-
-io.on('connection', (socket) => {
-  console.log('Um usuário conectou');
-
-  socket.on('audio-stream', (data) => {
-    socket.broadcast.emit('audio-stream', data);
-  });
-
-  socket.on('disconnect', () => {
-    console.log('Usuário desconectou');
-  });
-});
-
-const PORT = process.env.PORT || 3000;
-http.listen(PORT, () => {
-  console.log(`Servidor rodando na porta ${PORT}`);
-});
+console.log('Servidor WebSocket rodando na porta 8080');
