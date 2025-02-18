@@ -11,6 +11,7 @@
         <button id="startButton">Iniciar Transmissão</button>
         <button id="stopButton" style="display: none;">Parar Transmissão</button>
         <div id="status" style="margin-top: 20px;"></div>
+        <div id="debug" style="margin: 20px; text-align: left; padding: 10px; background: #f0f0f0;"></div>
     </div>
 
     <script>
@@ -21,20 +22,44 @@
         const startButton = document.getElementById('startButton');
         const stopButton = document.getElementById('stopButton');
         const status = document.getElementById('status');
+        const debug = document.getElementById('debug');
 
-        // Configurações do MediaRecorder
-        const audioConfig = {
-            mimeType: 'audio/webm;codecs=opus',
-            audioBitsPerSecond: 128000
-        };
+        function log(message) {
+            const time = new Date().toLocaleTimeString();
+            debug.innerHTML = `[${time}] ${message}<br>` + debug.innerHTML;
+            console.log(`[${time}] ${message}`);
+        }
+
+        // Verificar formatos suportados
+        function getSupportedMimeType() {
+            const types = [
+                'audio/webm',
+                'audio/webm;codecs=opus',
+                'audio/ogg;codecs=opus',
+                'audio/mp4;codecs=opus'
+            ];
+            
+            for (const type of types) {
+                if (MediaRecorder.isTypeSupported(type)) {
+                    log(`✅ Formato suportado encontrado: ${type}`);
+                    return type;
+                }
+            }
+            
+            log('❌ Nenhum formato suportado encontrado');
+            return null;
+        }
 
         socket.on('connect', () => {
+            log('🟢 Conectado ao servidor');
             status.innerHTML = 'Conectado ao servidor';
             status.style.color = 'green';
             startButton.disabled = false;
+            socket.emit('register-role', 'transmitter');
         });
 
         socket.on('disconnect', () => {
+            log('🔴 Desconectado do servidor');
             status.innerHTML = 'Desconectado do servidor';
             status.style.color = 'red';
             stopTransmission();
@@ -42,35 +67,57 @@
 
         startButton.onclick = async () => {
             try {
+                log('🎤 Solicitando acesso ao microfone...');
                 audioStream = await navigator.mediaDevices.getUserMedia({ 
                     audio: {
+                        channelCount: 1,
+                        sampleRate: 44100,
                         echoCancellation: true,
                         noiseSuppression: true,
                         autoGainControl: true
                     }
                 });
+                
+                const mimeType = getSupportedMimeType();
+                if (!mimeType) {
+                    throw new Error('Nenhum formato de áudio suportado');
+                }
 
-                mediaRecorder = new MediaRecorder(audioStream, audioConfig);
+                log('🎙️ Configurando MediaRecorder...');
+                const options = {
+                    mimeType: mimeType,
+                    audioBitsPerSecond: 128000
+                };
+                
+                mediaRecorder = new MediaRecorder(audioStream, options);
+                log(`   Formato: ${mediaRecorder.mimeType}`);
+                log(`   Bitrate: ${options.audioBitsPerSecond}bps`);
                 
                 mediaRecorder.ondataavailable = (event) => {
                     if (event.data.size > 0) {
+                        log(`📤 Enviando chunk de áudio: ${event.data.size} bytes`);
                         socket.emit('audio-stream', event.data);
-                        console.log('Enviando áudio:', event.data.size, 'bytes');
                     }
                 };
 
                 mediaRecorder.onstart = () => {
+                    log('▶️ Gravação iniciada');
                     status.innerHTML = 'Transmitindo...';
                     status.style.color = 'green';
                     startButton.style.display = 'none';
                     stopButton.style.display = 'inline';
                 };
 
-                mediaRecorder.start(100); // Envia chunks a cada 100ms
+                mediaRecorder.onstop = () => {
+                    log('⏹️ Gravação parada');
+                };
+
+                log('▶️ Iniciando gravação...');
+                mediaRecorder.start(100); // Chunks a cada 100ms
 
             } catch (error) {
-                console.error('Erro ao acessar microfone:', error);
-                status.innerHTML = 'Erro ao acessar microfone: ' + error.message;
+                log('❌ Erro: ' + error.message);
+                status.innerHTML = 'Erro: ' + error.message;
                 status.style.color = 'red';
             }
         };
@@ -79,9 +126,11 @@
 
         function stopTransmission() {
             if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+                log('⏹️ Parando gravação...');
                 mediaRecorder.stop();
             }
             if (audioStream) {
+                log('🎤 Liberando microfone...');
                 audioStream.getTracks().forEach(track => track.stop());
             }
             status.innerHTML = 'Transmissão parada';
