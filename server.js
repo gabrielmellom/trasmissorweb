@@ -1,46 +1,28 @@
-// server.js
-const https = require('https');
-const fs = require('fs');
 const express = require('express');
 const app = express();
+const http = require('http').createServer(app);
+const io = require('socket.io')(http, {
+  cors: {
+    origin: "*",
+    methods: ["GET", "POST"]
+  }
+});
 
-// Configurar pasta public
 app.use(express.static('public'));
 
-// Ler certificados
-const options = {
-  key: fs.readFileSync('./certs/private-key.pem'),
-  cert: fs.readFileSync('./certs/certificate.pem')
-};
-
-// Criar servidor HTTPS
-const server = https.createServer(options, app);
-const io = require('socket.io')(server);
-
-// Socket.IO setup
 io.on('connection', (socket) => {
-  console.log('Usuário conectado');
+  console.log('Um usuário conectou');
 
-  socket.on('join-room', (roomId) => {
-    socket.join(roomId);
-    socket.to(roomId).emit('user-connected');
+  socket.on('audio-stream', (data) => {
+    socket.broadcast.emit('audio-stream', data);
   });
 
-  socket.on('offer', (offer, roomId) => {
-    socket.to(roomId).emit('offer', offer);
-  });
-
-  socket.on('answer', (answer, roomId) => {
-    socket.to(roomId).emit('answer', answer);
-  });
-
-  socket.on('ice-candidate', (candidate, roomId) => {
-    socket.to(roomId).emit('ice-candidate', candidate);
+  socket.on('disconnect', () => {
+    console.log('Usuário desconectou');
   });
 });
 
-// Iniciar servidor
-server.listen(3000, () => {
-  console.log('Servidor HTTPS rodando em https://localhost:3000');
-  console.log('Para acessar do celular: https://192.168.2.138:3000');
+const PORT = process.env.PORT || 3000;
+http.listen(PORT, () => {
+  console.log(`Servidor rodando na porta ${PORT}`);
 });
