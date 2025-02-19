@@ -17,5 +17,5 @@ wss.on('connection', (ws) => {
     console.log('Cliente desconectado');
   });
 });
-s
+
 console.log('Servidor WebSocket rodando na porta 8080');
