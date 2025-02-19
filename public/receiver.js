@@ -3,8 +3,7 @@ const { play } = require('sound-play');
 const fs = require('fs');
 const path = require('path');
 
-const ws = new WebSocket('ws://seu-servidor-render.onrender.com:8080'); // Substitua pelo URL do seu servidor
-
+const ws = new WebSocket('wss://trasmissorweb.onrender.com');
 // Cria um arquivo temporário para armazenar o áudio recebido
 const tempFilePath = path.join(__dirname, 'temp_audio.wav');
 

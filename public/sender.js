@@ -1,8 +1,7 @@
 const record = require('node-record-lpcm16');
 const WebSocket = require('ws');
 
-const ws = new WebSocket('ws://seu-servidor-render.onrender.com:8080'); // Substitua pelo URL do seu servidor
-
+const ws = new WebSocket('wss://trasmissorweb.onrender.com');
 // Inicia a captura de áudio
 const audioStream = record.record({
   sampleRate: 44100,
